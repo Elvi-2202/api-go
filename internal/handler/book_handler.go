@@ -19,33 +19,28 @@ func NewBookHandler(repo repository.BookRepository) *BookHandler {
 }
 
 func (h *BookHandler) CreateBook(w http.ResponseWriter, r *http.Request) {
-	var req model.CreateBookRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var b model.Book
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		sendError(w, "JSON invalide", http.StatusBadRequest)
 		return
 	}
 
-	if !req.Validate() {
-		sendError(w, "Validation échouée", http.StatusBadRequest)
+	if err := b.Validate(); err != nil {
+		sendError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	book := &model.Book{
-		Title:     req.Title,
-		Author:    req.Author,
-		Year:      req.Year,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
+	b.CreatedAt = time.Now()
+	b.UpdatedAt = time.Now()
 
-	if err := h.repo.Create(r.Context(), book); err != nil {
+	if err := h.repo.Create(r.Context(), &b); err != nil {
 		sendError(w, "Erreur serveur", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(book)
+	w.WriteHeader(http.StatusCreated) 
+	json.NewEncoder(w).Encode(b)
 }
 
 func (h *BookHandler) ListBooks(w http.ResponseWriter, r *http.Request) {
@@ -64,10 +59,6 @@ func (h *BookHandler) GetBook(w http.ResponseWriter, r *http.Request) {
 	book, err := h.repo.GetByID(r.Context(), id)
 	
 	if err != nil {
-		sendError(w, "Erreur serveur", http.StatusInternalServerError)
-		return
-	}
-	if book == nil {
 		sendError(w, "Livre non trouvé", http.StatusNotFound)
 		return
 	}
@@ -78,27 +69,27 @@ func (h *BookHandler) GetBook(w http.ResponseWriter, r *http.Request) {
 
 func (h *BookHandler) UpdateBook(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var req model.CreateBookRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	var b model.Book
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		sendError(w, "JSON invalide", http.StatusBadRequest)
 		return
 	}
 
-	book := &model.Book{
-		ID:        id,
-		Title:     req.Title,
-		Author:    req.Author,
-		Year:      req.Year,
-		UpdatedAt: time.Now(),
+	b.ID = id
+	if err := b.Validate(); err != nil {
+		sendError(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
-	if err := h.repo.Update(r.Context(), book); err != nil {
+	b.UpdatedAt = time.Now()
+
+	if err := h.repo.Update(r.Context(), &b); err != nil {
 		sendError(w, "Erreur serveur", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(book)
+	json.NewEncoder(w).Encode(b)
 }
 
 func (h *BookHandler) DeleteBook(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +99,7 @@ func (h *BookHandler) DeleteBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusNoContent)// Respect du code 204 [cite: 45]
 }
 
 func sendError(w http.ResponseWriter, message string, code int) {

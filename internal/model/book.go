@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"errors"
+	"strings"
+	"time"
+)
 
 type Book struct {
 	ID        string    `json:"id"`
@@ -17,12 +21,15 @@ type CreateBookRequest struct {
 	Year   *int   `json:"year"`
 }
 
-func (r *CreateBookRequest) Validate() bool {
-	if r.Title == "" || r.Author == "" {
-		return false
+func (b *Book) Validate() error {
+	if strings.TrimSpace(b.Title) == "" {
+		return errors.New("le titre est obligatoire")
 	}
-	if r.Year != nil && (*r.Year < 0 || *r.Year > 2100) {
-		return false
+	if strings.TrimSpace(b.Author) == "" {
+		return errors.New("l'auteur est obligatoire")
 	}
-	return true
+	if b.Year != nil && (*b.Year < 0 || *b.Year > 2100) {
+		return errors.New("l'année doit être comprise entre 0 et 2100")
+	}
+	return nil
 }

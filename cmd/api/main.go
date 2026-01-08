@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/Elvi-2202/book-api/internal/handler"
 	"github.com/Elvi-2202/book-api/internal/repository"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 func main() {
@@ -23,7 +26,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Erreur: %v", err)
 	}
-	
 	defer db.Close()
 
 	repo := repository.NewPostgresBookRepository(db)
@@ -36,8 +38,14 @@ func main() {
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		err := db.PingContext(r.Context())
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status": "up"}`))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"status": "down", "database": "unreachable"}`))
+			return
+		}
+		w.Write([]byte(`{"status": "up", "database": "connected"}`))
 	})
 
 	r.Route("/books", func(r chi.Router) {
@@ -48,15 +56,33 @@ func main() {
 		r.Delete("/{id}", bookHandler.DeleteBook)
 	})
 
-	log.Println("Serveur sur http://localhost:8080")
 	server := &http.Server{
 		Addr:         ":8080",
 		Handler:      r,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
-	
-	log.Fatal(server.ListenAndServe())
+
+	go func() {
+		log.Println("Serveur sur http://localhost:8080")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Erreur serveur: %v", err)
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	log.Println("Arrêt du serveur...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Erreur lors de la fermeture: %v", err)
+	}
+	log.Println("Serveur arrêté proprement")
 }
 
 func getEnv(key, fallback string) string {
